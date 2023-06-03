@@ -1,0 +1,46 @@
+﻿@inject AgvRobot Robot
+@using MauiApp3.app.robot
+<div class="alert alert-secondary mt-4">
+    <span class="oi oi-pencil me-2" aria-hidden="true"></span>
+    <strong>@Title @if (Robot.Status)
+                   {
+                       <span>连接成功</span>
+                   }
+                   else
+                   {
+                       <span>连接失败</span>
+                   }
+    </strong>
+    
+    <div><span>IP</span><input type="text" value="@Robot.Ip" name="" id=""/></div>
+    <div><span>PORT</span><input type="number" value="@Robot.Port" name="" id=""/></div>
+    <div><span>刷新间隔</span><input type="number" value="@Robot.RefreshRate" name="" id=""/></div>
+    <button @onclick="@Connect">
+        @if(Robot.Status){
+            <span>断开</span>
+        }else{
+            <span>连接</span>
+        }
+    </button>
+</div>
+
+@code {
+    // Demonstrates how a parent component can supply parameters
+    [Parameter]
+    public string Title { get; set; }
+    public string Name { get; set; } = "agv智能小车";
+    public int RefreshRate { get; set; } = 500;
+
+    private async void Connect(MouseEventArgs obj)
+    {
+        if (Robot.Status)
+        {
+            Robot.DisConnect();
+        }
+        else
+        {
+            await Robot.ConnectAsync();
+            StateHasChanged();
+        }
+    }
+}

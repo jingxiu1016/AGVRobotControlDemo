@@ -1,0 +1,146 @@
+﻿@page "/counter"
+@using MauiApp3.app.robot.map_manage
+@using MauiApp3.app.robot
+@using System.Text.RegularExpressions
+@inject Manage Manager;
+@inject AgvRobot Robot
+@inject MessageService MessageService
+
+<h1>控制台</h1>
+<div class="row">
+    <div class="col-12 col-sm-6">
+        <Select TValue="string" Items="Manager.Maps" OnSelectedItemChanged="OnBeforeSelectedItemChange"></Select>
+        @* <Select TValue="string" Items="Manager.Maps" OnBeforeSelectedItemChange="@OnBeforeSelectedItemChange"/> *@
+    </div>
+    @* <ButtonUpload TValue="string" OnChange="@FileUpload" ShowUploadFileList="false" BrowserButtonText="上传地图" BrowserButtonIcon="fa-solid fa-cloud-arrow-up" class="mt-3"></ButtonUpload> *@
+</div>
+<Divider Text="功能按钮" Alignment="Alignment.Left"/>
+<div class="row g-3">
+    <div class="col-6 col-sm-4 col-md-3 col-lg-auto"><Button OnClick="@RecycleCtrl" Color="Color.Primary">抢占控制权</Button></div>
+    <div class="col-6 col-sm-4 col-md-3 col-lg-auto"><Button OnClick="@ReleaseCtrl" Color="Color.Secondary">回收控制权</Button></div>
+</div>
+<Divider Text="路径导航到站点" Alignment="Alignment.Left"/>
+@if (Manager.CurrentMap != null)
+{
+    <div class="row g-3">
+        @foreach (var item in Manager.CurrentMap.Points)
+        {
+            <div class="col-4 col-sm-auto" @onclick="@(args => GotoPoint(args, item.Name))">
+                <Tag Color="Color.Primary">@item.Name</Tag>
+            </div>
+        }
+    </div>
+}
+
+
+
+@code {
+    protected override void OnInitialized()
+    {
+        
+    }
+
+    public async Task RecycleCtrl(object state)
+    {
+        var messageOption = new MessageOption()
+        {
+            Content = "抢占控制权失败",
+            Icon = "fa-solid fa-circle-info",
+            Color = Color.Warning,
+        };
+        if (Robot.RecycleCtrl())
+        {
+            messageOption.Color = Color.Primary;
+            messageOption.Content = "抢占控制权成功";
+        }
+        await MessageService.Show(messageOption);
+    }
+
+    private async Task ReleaseCtrl(object state)
+    {
+        var messageOption = new MessageOption()
+        {
+            Content = "释放控制权失败",
+            Icon = "fa-solid fa-circle-info",
+            Color = Color.Warning,
+        };
+        if (Robot.ReleaseCtrl())
+        {
+            messageOption.Color = Color.Primary;
+            messageOption.Content = "释放控制权成功";
+        }
+        await MessageService.Show(messageOption);
+    }
+
+    private Task<bool> OnBeforeSelectedItemChange(SelectedItem item)
+    {
+        Manager.LoadMap(item.Value);
+        StateHasChanged();
+        return Task.FromResult(true);
+    }
+
+    private async Task GotoPoint(object state,string sitename)
+    {
+        string pattern = @"\d+";
+        var match = Regex.Match(sitename, pattern);
+        if (match.Success)
+        {
+            var res = Convert.ToInt32(match.Value);
+            if (res == 0)
+            {
+                await MessageService.Show(new MessageOption()
+                {
+                    Content = "错误的站点",
+                    Icon = "fa-solid fa-circle-info",
+                    Color = Color.Warning,
+                });
+                return;
+            }
+            if (Robot.PathNavigationToSite(res))
+            {
+                await MessageService.Show(new MessageOption()
+                {
+                    Content = "导航成功",
+                    Icon = "fa-solid fa-circle-info",
+                    Color = Color.Success,
+                });
+            }
+            else
+            {
+                await MessageService.Show(new MessageOption()
+                {
+                    Content = "导航失败",
+                    Icon = "fa-solid fa-circle-info",
+                    Color = Color.Danger,
+                });
+            }
+        }
+        else
+        {
+            await MessageService.Show(new MessageOption()
+            {
+                Content = "错误的站点",
+                Icon = "fa-solid fa-circle-info",
+                Color = Color.Warning,
+            });
+        }
+    }
+    
+    
+    // 文件上传
+    private async Task FileUpload(UploadFile file)
+    {
+        var messageOption = new MessageOption()
+        {
+            Content = "上传地图失败",
+            Icon = "fa-solid fa-circle-info",
+            Color = Color.Warning,
+        };
+        if (Manager.SaveMap(file.File).Result)
+        {
+            messageOption.Content = "上传地图成功";
+            messageOption.Color = Color.Primary;
+        }
+        await MessageService.Show(messageOption);
+    }
+}

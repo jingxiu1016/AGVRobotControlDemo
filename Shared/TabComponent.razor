@@ -1,0 +1,155 @@
+@using MauiApp3.app.robot.my_enum
+@using MauiApp3.app.robot
+@using System.Threading
+@using EasyModbus
+@using Timer = System.Threading.Timer
+@using System.ComponentModel
+@using System.Diagnostics
+@using System.Reflection
+@using System.Security
+@using System.Text.RegularExpressions
+@using Console = BootstrapBlazor.Components.Console
+@inject AgvRobot Robot
+<h4>连接信息 
+    @if (Robot.Status)
+    {
+        <span>连接成功</span>
+    }
+    else
+    {
+        <span>未连接</span>
+    }
+</h4>
+<div class="tab-container">
+    <div class="tab-bar">
+        @foreach (var tab in Tabs)
+        {
+            <div class="tab @(tab.IsActive ? "active" : "")" @onclick="@(e=>SelectTab(e,tab))">@tab.Title</div>
+        }
+    </div>
+</div>
+@if (Robot.Status)
+{
+    @Robot.RefreshRate
+    <Table TItem="RobotInfo" IsPagination="false" 
+           IsStriped="true" IsBordered="true" IsMultipleSelect="true"
+           IsAutoRefresh="true" AutoRefreshInterval="@Robot.RefreshRate"
+           OnQueryAsync="@OnAutoQueryAsync">
+        <TableColumns>
+            <TableColumn @bind-Field="@context.Name" Width="180" />
+            <TableColumn @bind-Field="@context.Value" Width="100" />
+        </TableColumns>
+    </Table>
+}
+
+@code {
+    [Parameter]
+    public List<TabItem> Tabs { get; set; }
+
+    public List<RobotInfo>  infos=new ();
+    private bool _isRefresh = false;
+
+    private TabItem SelectedTab { get; set; }
+
+    protected override void OnInitialized()
+    {
+        SelectedTab = Tabs.FirstOrDefault();
+        _isRefresh = true;
+    }
+    
+    private Task<QueryData<RobotInfo>> OnAutoQueryAsync(QueryPageOptions options) => RefreshInfos(options, infos);
+
+    private void SelectTab(MouseEventArgs e,TabItem tab)
+    {
+        SelectedTab.IsActive = false;
+        tab.IsActive = true;
+        SelectedTab = tab;
+    }
+    
+    private Task<QueryData<RobotInfo>> RefreshInfos(QueryPageOptions options, List<RobotInfo> infos)
+    {
+        infos.Clear();
+        if (!Robot.ReadInfo())
+        {
+            return Task.FromResult(new QueryData<RobotInfo>());
+        }
+        var list = SelectedTab.Content.ReturnField().ToList();
+        Debug.WriteLine(SelectedTab.Title);
+        for(var i = 0; i < list.Count; i++)
+        {
+            var item = list[i];
+            var desc = item.GetCustomAttribute<DescriptionAttribute>()?.Description;
+            var key = item.GetValue(SelectedTab.Content);
+            var pattern = @"^[0134]x\d{5}$";
+            if (key == null || !Regex.IsMatch(key?.ToString(), pattern)){continue;}
+            var reg = Parser.ParseRegisterType(key?.ToString() ?? string.Empty);
+            object value = new();
+            FieldInfo nextItem = null;
+            int span = 0;
+            if (i + 1 < list.Count)
+            {
+                nextItem = list[i + 1];
+            }
+            if (nextItem != null)
+            {
+                key = nextItem.GetValue(SelectedTab.Content);
+                if (key == null || !Regex.IsMatch(key?.ToString(), pattern)){continue;}
+                var nextReg = Parser.ParseRegisterType(key?.ToString() ?? string.Empty);
+                span = nextReg.Item - reg.Item;
+            }
+            var index = reg.Item - 1;
+            switch (reg.Type)
+            {
+                case RegisterType.HoldingRegisters:
+                    if (span != 1 && span != 0)
+                    {
+                        value = Convert(span, Robot.HoldingRegisters.Skip(index).Take(span).ToArray());
+                    }
+                    else
+                    {
+                        value = Robot.HoldingRegisters[index];
+                    }
+                    break;
+                case RegisterType.InputRegisters:
+                    if (span != 1&& span != 0)
+                    {
+                        value = Convert(span, Robot.InputRegisters.Skip(index).Take(span).ToArray());
+                    }
+                    else
+                    {
+                        value = Robot.InputRegisters[index];
+                    }
+                    break;
+                case RegisterType.Coils:
+                    value = Robot.Coils[index];
+                    break;
+                case RegisterType.DiscreteInputRegisters:
+                    value = Robot.DiscreteInputRegisters[index];
+                    break;
+            }
+            if (desc != null){infos?.Add(new RobotInfo{Name = desc, Value = value});}
+        }
+        return Task.FromResult(new QueryData<RobotInfo>()
+        {
+            Items = infos,
+            TotalCount = infos.Count
+        });
+    }
+
+    private object Convert(int span,int[] addr)
+    {
+        return span switch
+        {
+            2 => ModbusClient.ConvertRegistersToFloat(addr),
+            4 => ModbusClient.ConvertRegistersToDouble(addr),
+            _ => null
+            };
+    }
+
+    public class TabItem
+    {
+        public string Title { get; set; }
+        public IType Content { get; set; }
+        public bool IsActive { get; set; }
+    }
+}
